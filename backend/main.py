@@ -1,9 +1,11 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+from typing import List, Dict, Optional, Any
 import os
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
+import json
 
 load_dotenv()
 
@@ -15,48 +17,90 @@ if GEMINI_API_KEY:
 else:
     client = None
 
-class RecommendationRequest(BaseModel):
-    step_count: int
-    latitude: float
-    longitude: float
-    user_prompt: str
+# Mock Database for User State & Preferences
+MOCK_USER_DB = {
+    "preferences": {
+        "diet": "Standard",
+        "notifications": True
+    },
+    "state": {
+        "calories": {"actual": 1450, "target": 2100},
+        "macros": {
+            "protein": {"actual": 85, "target": 120},
+            "carbs": {"actual": 150, "target": 220},
+            "fats": {"actual": 45, "target": 65}
+        },
+        "recent_activity": [
+            {"title": "Quinoa Power Bowl", "time": "Lunch • 1:20 PM", "calories": "450 kcal"},
+            {"title": "Green Detox Smoothie", "time": "Snack • 10:45 AM", "calories": "180 kcal"}
+        ]
+    }
+}
+
+# --- Pydantic Models ---
+
+class UserContext(BaseModel):
+    time: str
+    recent_workout: bool
+
+class ChatRequest(BaseModel):
+    message: str
+    context: UserContext
+
+class RecipeCard(BaseModel):
+    name: str
+    prep_time: str
+    calories: int
+    protein: int
+    carbs: int
+    fats: int
+    ingredients: List[str]
+
+class ChatResponse(BaseModel):
+    text: str
+    recipe: Optional[RecipeCard] = None
+
+class PreferencesUpdateRequest(BaseModel):
+    diet: Optional[str] = None
+    notifications: Optional[bool] = None
+
+# --- API Endpoints ---
 
 @app.get("/")
 def read_root():
     return {"message": "Welcome to the Nutriflow API"}
 
-def mock_places_api(lat: float, lng: float):
-    # Mocking Google Places API for nearby healthy restaurants
-    return [
-        {"name": "Green Bowl Co.", "type": "Salad & Grain Bowls", "distance_meters": 450},
-        {"name": "Protein Point", "type": "Health Food Grill", "distance_meters": 800},
-        {"name": "Vitality Juice Bar", "type": "Smoothies & Wraps", "distance_meters": 300}
-    ]
+@app.get("/api/user/state")
+def get_user_state():
+    return {"data": MOCK_USER_DB["state"]}
 
-@app.post("/ask")
-def get_recommendation(request: RecommendationRequest):
+@app.patch("/api/user/preferences")
+def update_user_preferences(prefs: PreferencesUpdateRequest):
+    if prefs.diet is not None:
+        MOCK_USER_DB["preferences"]["diet"] = prefs.diet
+    if prefs.notifications is not None:
+        MOCK_USER_DB["preferences"]["notifications"] = prefs.notifications
+    return {"data": MOCK_USER_DB["preferences"]}
+
+@app.post("/api/chat", response_model=ChatResponse)
+def chat_with_assistant(request: ChatRequest):
     if not client:
         raise HTTPException(status_code=500, detail="Gemini API Key is not configured in .env")
 
-    # 1. Fetch nearby healthy places based on GPS (Mocked)
-    nearby_places = mock_places_api(request.latitude, request.longitude)
-    places_context = "\n".join([f"- {p['name']} ({p['type']}, {p['distance_meters']}m away)" for p in nearby_places])
-
-    # 2. Build the Intelligence Context
+    user_diet = MOCK_USER_DB["preferences"]["diet"]
+    
     system_instruction = (
-        "You are Nutriflow, an elite, high-end nutrition AI. Your goal is to provide a highly curated, "
-        "personalized food recommendation. Use an editorial, energetic, and sophisticated tone. Keep it concise."
+        "You are Nutriflow's Assistant. You provide highly curated, structured food advice. "
+        f"The user's current diet preference is {user_diet}. "
+        "Return your response ONLY as a JSON object matching this schema:\n"
+        '{"text": "Your conversational response", "recipe": null or {"name": "...", "prep_time": "...", "calories": 123, "protein": 12, "carbs": 34, "fats": 5, "ingredients": ["..."]}}'
     )
 
     prompt = (
-        f"User Prompt: '{request.user_prompt}'\n"
-        f"Current Steps Today: {request.step_count} (Assess their caloric need based on this activity)\n"
-        f"Nearby Healthy Options:\n{places_context}\n\n"
-        "Based on this exact data, recommend a specific meal from one of the nearby options. "
-        "Explain *why* this matches their current activity level."
+        f"User Message: '{request.message}'\n"
+        f"Context: Time is {request.context.time}, Recent Workout: {request.context.recent_workout}\n"
     )
 
-    # 3. Query Gemini for synthesis
     try:
         response = client.models.generate_content(
             model="gemini-1.5-flash",
@@ -64,19 +108,42 @@ def get_recommendation(request: RecommendationRequest):
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,
                 temperature=0.7,
+                response_mime_type="application/json",
             ),
         )
-        recommendation_text = response.text
+        
+        # Parse the JSON response
+        data = json.loads(response.text)
+        return ChatResponse(**data)
+        
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Gemini Inference Error: {str(e)}")
 
-    # 4. Return to Flutter UI
-    return {
-        "status": "success",
-        "data": {
-            "received_prompt": request.user_prompt,
-            "steps": request.step_count,
-            "location": {"lat": request.latitude, "lng": request.longitude},
-            "recommendation": recommendation_text
-        }
-    }
+@app.post("/api/planner/generate")
+def generate_meal_plan():
+    if not client:
+        raise HTTPException(status_code=500, detail="Gemini API Key is not configured in .env")
+
+    user_diet = MOCK_USER_DB["preferences"]["diet"]
+    
+    system_instruction = (
+        "You are Nutriflow's meal planner. Generate a 7-day meal plan (Mon-Sun). "
+        f"Adhere to the {user_diet} diet. "
+        "Return ONLY a JSON array of objects with schema: [{'day': 'Monday', 'breakfast': '...', 'lunch': '...', 'dinner': '...'}, ...]"
+    )
+
+    try:
+        response = client.models.generate_content(
+            model="gemini-1.5-flash",
+            contents="Generate next week's meal plan.",
+            config=types.GenerateContentConfig(
+                system_instruction=system_instruction,
+                temperature=0.7,
+                response_mime_type="application/json",
+            ),
+        )
+        data = json.loads(response.text)
+        return {"data": {"plan": data}}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Gemini Inference Error: {str(e)}")
