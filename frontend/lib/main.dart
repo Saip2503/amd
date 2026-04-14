@@ -34,10 +34,16 @@ class NavigationIndexNotifier extends Notifier<int> {
 }
 final navigationIndexProvider = NotifierProvider<NavigationIndexNotifier, int>(NavigationIndexNotifier.new);
 
-final apiProvider = Provider<Dio>((ref) => Dio(BaseOptions(
-      baseUrl: dotenv.env['API_BASE_URL'] ?? 'http://127.0.0.1:8000',
-      connectTimeout: const Duration(seconds: 10),
-    )));
+final apiProvider = Provider<Dio>((ref) {
+  // Use compilation environment variable if provided, otherwise fallback to dotenv or localhost
+  final compileTimeUrl = const String.fromEnvironment('API_URL');
+  final String liveUrl = compileTimeUrl.isNotEmpty ? compileTimeUrl : (dotenv.env['API_BASE_URL'] ?? 'http://127.0.0.1:8000');
+  
+  return Dio(BaseOptions(
+    baseUrl: liveUrl,
+    connectTimeout: const Duration(seconds: 10),
+  ));
+});
 
 // ─── Entry Point ─────────────────────────────────────────────────────────────
 void main() async {

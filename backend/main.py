@@ -6,10 +6,19 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 import json
+from fastapi.middleware.cors import CORSMiddleware
 
 load_dotenv()
 
 app = FastAPI(title="Nutriflow API")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins for local dev
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods including OPTIONS
+    allow_headers=["*"],
+)
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if GEMINI_API_KEY:
@@ -112,11 +121,20 @@ def chat_with_assistant(request: ChatRequest):
             ),
         )
         
-        # Parse the JSON response
-        data = json.loads(response.text)
+        # Clean up possible markdown json blocks
+        raw_text = response.text.strip()
+        if raw_text.startswith("```json"):
+            raw_text = raw_text[7:]
+        if raw_text.startswith("```"):
+            raw_text = raw_text[3:]
+        if raw_text.endswith("```"):
+            raw_text = raw_text[:-3]
+            
+        data = json.loads(raw_text.strip())
         return ChatResponse(**data)
         
     except Exception as e:
+        print(f"🔥 CAUGHT ERROR IN /api/chat: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Gemini Inference Error: {str(e)}")
 
 @app.post("/api/planner/generate")
@@ -142,8 +160,18 @@ def generate_meal_plan():
                 response_mime_type="application/json",
             ),
         )
-        data = json.loads(response.text)
+        # Clean up possible markdown json blocks
+        raw_text = response.text.strip()
+        if raw_text.startswith("```json"):
+            raw_text = raw_text[7:]
+        if raw_text.startswith("```"):
+            raw_text = raw_text[3:]
+        if raw_text.endswith("```"):
+            raw_text = raw_text[:-3]
+
+        data = json.loads(raw_text.strip())
         return {"data": {"plan": data}}
         
     except Exception as e:
+        print(f"🔥 CAUGHT ERROR IN /api/planner: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Gemini Inference Error: {str(e)}")

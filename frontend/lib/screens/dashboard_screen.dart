@@ -1,51 +1,74 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
-
 import '../theme.dart';
+import '../providers.dart';
 
 class DashboardScreen extends ConsumerWidget {
   const DashboardScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final stateAsync = ref.watch(userStateProvider);
+    
     return SafeArea(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 32.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('Nutri-Flow', style: GoogleFonts.manrope(fontSize: 24, fontWeight: FontWeight.w800, color: kOnSurface)),
-                CircleAvatar(backgroundColor: kSurfaceContainer, radius: 20, child: const Icon(Icons.person_outline, color: kOnSurfaceVariant, size: 20)),
-              ],
-            ),
-            const SizedBox(height: 36),
-            Text('DAILY FLOW', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: kOnSurfaceVariant, letterSpacing: 2.0)),
-            const SizedBox(height: 12),
-            Text('Good morning,\nAlex.', style: GoogleFonts.manrope(fontSize: 40, fontWeight: FontWeight.w800, height: 1.05, color: kOnSurface)),
-            const SizedBox(height: 12),
-            Text('Your metabolism is in peak state today. Let\'s fuel it right.', style: GoogleFonts.inter(fontSize: 16, height: 1.6, color: kOnSurfaceVariant)),
-            const SizedBox(height: 40),
-            const _InsightCard(),
-            const SizedBox(height: 40),
-            Text('Recent Activity', style: GoogleFonts.manrope(fontSize: 20, fontWeight: FontWeight.w800, color: kOnSurface)),
-            const SizedBox(height: 20),
-            const _ActivityRow(title: 'Quinoa Power Bowl', subtitle: 'Lunch • 1:20 PM', calories: '450 kcal', icon: Icons.rice_bowl_outlined),
-            Container(height: 1, color: kSurfaceContainer),
-            const _ActivityRow(title: 'Green Detox Smoothie', subtitle: 'Snack • 10:45 AM', calories: '180 kcal', icon: Icons.local_drink_outlined),
-            const SizedBox(height: 80),
-          ],
-        ),
-      ),
+      child: stateAsync.when(
+        data: (state) {
+            final calories = state['calories'];
+            final recent = List.from(state['recent_activity']);
+            
+            return SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 32.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Nutri-Flow', style: GoogleFonts.manrope(fontSize: 24, fontWeight: FontWeight.w800, color: kOnSurface)),
+                      CircleAvatar(backgroundColor: kSurfaceContainer, radius: 20, child: const Icon(Icons.person_outline, color: kOnSurfaceVariant, size: 20)),
+                    ],
+                  ),
+                  const SizedBox(height: 36),
+                  Text('DAILY FLOW', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: kOnSurfaceVariant, letterSpacing: 2.0)),
+                  const SizedBox(height: 12),
+                  Text('Good morning,\nAlex.', style: GoogleFonts.manrope(fontSize: 40, fontWeight: FontWeight.w800, height: 1.05, color: kOnSurface)),
+                  const SizedBox(height: 12),
+                  Text('Your metabolism is in peak state today. Let\'s fuel it right.', style: GoogleFonts.inter(fontSize: 16, height: 1.6, color: kOnSurfaceVariant)),
+                  const SizedBox(height: 40),
+                  
+                  _InsightCard(remainingCal: calories['target'] - calories['actual']),
+                  
+                  const SizedBox(height: 40),
+                  Text('Recent Activity', style: GoogleFonts.manrope(fontSize: 20, fontWeight: FontWeight.w800, color: kOnSurface)),
+                  const SizedBox(height: 20),
+                  
+                  ...recent.map((entry) => Column(
+                    children: [
+                      _ActivityRow(
+                        title: entry['title'], 
+                        subtitle: entry['time'], 
+                        calories: entry['calories'], 
+                        icon: Icons.fastfood_outlined
+                      ),
+                      Container(height: 1, color: kSurfaceContainer),
+                    ],
+                  )),
+                  const SizedBox(height: 80),
+                ],
+              ),
+            );
+        },
+        loading: () => const Center(child: CircularProgressIndicator(color: kPrimary)),
+        error: (err, stack) => Center(child: Text("Connection failed: $err", style: GoogleFonts.inter(color: Colors.red))),
+      )
     );
   }
 }
 
 class _InsightCard extends StatelessWidget {
-  const _InsightCard();
+  final int remainingCal;
+  const _InsightCard({required this.remainingCal});
 
   @override
   Widget build(BuildContext context) {
@@ -66,7 +89,7 @@ class _InsightCard extends StatelessWidget {
             child: Text('Active Clarity', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: kPrimary, letterSpacing: 0.5)),
           ),
           const SizedBox(height: 20),
-          Text('650 kcal', style: GoogleFonts.manrope(fontSize: 52, fontWeight: FontWeight.w800, color: kOnSurface, height: 1.0, letterSpacing: -1.5)),
+          Text('$remainingCal kcal', style: GoogleFonts.manrope(fontSize: 52, fontWeight: FontWeight.w800, color: kOnSurface, height: 1.0, letterSpacing: -1.5)),
           const SizedBox(height: 4),
           Text('remaining for dinner', style: GoogleFonts.inter(fontSize: 16, color: kOnSurfaceVariant)),
           const SizedBox(height: 28),
