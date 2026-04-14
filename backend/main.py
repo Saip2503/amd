@@ -112,7 +112,7 @@ def chat_with_assistant(request: ChatRequest):
 
     try:
         response = client.models.generate_content(
-            model="gemini-1.5-flash",
+            model="gemini-1.5-flash-latest",
             contents=prompt,
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,
@@ -152,7 +152,7 @@ def generate_meal_plan():
 
     try:
         response = client.models.generate_content(
-            model="gemini-1.5-flash",
+            model="gemini-1.5-flash-latest",
             contents="Generate next week's meal plan.",
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,
